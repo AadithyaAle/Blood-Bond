@@ -49,13 +49,23 @@ canvas{ display:block; width:100%; height:100%; background:#0f0f14; }
 #gameOver{ top:50%; padding:28px; border-radius:10px; border:3px solid #f44336; background:rgba(0,0,0,0.95); display:none; min-width:260px }
 #transferNotice{ top:12%; padding:12px 18px; border-radius:8px; display:none; min-width:240px; background:rgba(0,0,0,0.88); border:2px solid #fff }
 
-/* intro overlay covers screen and centers text */
-#introScreen{ position:absolute; left:0; top:0; width:100%; height:100%; z-index:2000;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; background:linear-gradient(180deg, rgba(0,0,0,0.9), rgba(0,0,0,0.6)); transition:opacity .32s}
-#introCard{ width:min(920px,94%); max-width:1100px; padding:28px; border-radius:12px; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border:2px solid rgba(255,255,255,0.04) }
-#introCard h1{ font-size:52px; margin-bottom:8px; background:linear-gradient(90deg,#f44336,#ff6b6b); -webkit-background-clip:text; color:transparent; text-shadow:0 0 22px rgba(244,67,54,0.18) }
-.intro-text{ color:#ddd; font-size:15px; line-height:1.55; margin-bottom:16px }
-.intro-actions{ display:flex; gap:12px; justify-content:center }
+/* Intro overlay: CENTERED single Start button + fade */
+#introScreen{
+  position:absolute;
+  left:0; top:0;
+  width:100%; height:100%;
+  z-index:2000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(180deg, rgba(0,0,0,0.9), rgba(0,0,0,0.6));
+  transition:opacity .36s ease, visibility .36s;
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+}
+/* when fading out we set opacity 0 and disable pointer events */
+#introScreen.fade-out{ opacity:0; pointer-events:none; visibility:hidden; }
 
 /* emotion icons floating */
 .emotion{ position:absolute; font-size:32px; pointer-events:none; z-index:2100; text-shadow:0 0 10px rgba(0,0,0,0.6) }
@@ -65,9 +75,26 @@ canvas{ display:block; width:100%; height:100%; background:#0f0f14; }
 
 /* small helpers */
 .hidden{ display:none }
-.start-btn{ padding:12px 28px; border-radius:8px; border:0; font-weight:700; cursor:pointer }
+
+/* Start button styling (centered) */
+.start-btn{
+  padding:18px 44px;
+  border-radius:12px;
+  border:0;
+  font-weight:900;
+  font-size:22px;
+  cursor:pointer;
+  box-shadow:0 10px 30px rgba(0,0,0,0.5);
+  transform:translateY(0);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+.start-btn:active{ transform:translateY(2px); box-shadow:0 6px 18px rgba(0,0,0,0.45); }
+
+/* color variants */
 .btn-green{ background:linear-gradient(135deg,#4CAF50,#388E3C); color:#fff }
 .btn-blue{ background:linear-gradient(135deg,#2196F3,#1976D2); color:#fff }
+
+/* small misc */
 .small{ padding:8px 12px;font-size:13px }
 </style>
 </head>
@@ -75,31 +102,9 @@ canvas{ display:block; width:100%; height:100%; background:#0f0f14; }
 <div id="gameContainer">
   <canvas id="gameCanvas"></canvas>
 
-  <!-- Intro Overlay (covers whole screen) -->
-  <div id="introScreen">
-    <div id="introCard">
-      <h1>BLOOD &amp; BOND</h1>
-      <div class="intro-text">
-        <strong>Game instructions & mechanics</strong>
-        <ul style="margin-top:10px;color:#ddd">
-          <li><strong>Wave 1</strong> begins with <strong>10 zombies</strong>. Zombie numbers and difficulty increase each wave.</li>
-<<<<<<< HEAD
-          
-=======
-          <li><strong>Wave 4:</strong> You must clear zombies first; after all zombies are killed the <strong>Boss appears</strong> with a warning.</li>
-          <li>Father's max HP scales +<strong>20%</strong> per wave (multiplicative). Permanent boss buff applied at boss spawn.</li>
-          <li>If Father's HP ≤ <strong>10%</strong>, the Son takes the weapon and fights (auto-fire). Father regenerates passively + healed by Son kills until he reaches <strong>50%</strong>, then he reclaims the weapon.</li>
-          <li>Buff pickups (damage, invisibility, health) require sacrificing oxygen (Father) or food (Child).</li>
-          <li>During boss fight, for each 10% Father HP lost, Child protection increases +5% and gun damage +10% per 10% lost.</li>
-          <li>If both die at any time the game restarts (endless mode continues until both are dead).</li>
->>>>>>> 2a18e16552194eeeaa71f6efca3ed5060b818760
-        </ul>
-      </div>
-      <div class="intro-actions">
-        <button class="start-btn btn-green" onclick="startGame()">Begin</button>
-        <button class="start-btn btn-blue" onclick="startGame(true)">Skip Intro & Start</button>
-      </div>
-    </div>
+  <!-- Intro Overlay (single centered Start button) -->
+  <div id="introScreen" aria-hidden="false">
+    <button id="startButton" class="start-btn btn-green" onclick="startGame()">Start</button>
   </div>
 
   <!-- UI -->
@@ -450,8 +455,10 @@ function restartGame(){
 
 /* start */
 function startGame(skipIntro){
-  document.getElementById('introScreen').style.opacity = 0;
-  setTimeout(()=>{ document.getElementById('introScreen').style.display='none'; }, 320);
+  const intro = document.getElementById('introScreen');
+  // apply fade-out class for smooth fade
+  intro.classList.add('fade-out');
+  setTimeout(()=>{ try{ intro.style.display='none'; }catch(e){} }, 420);
   gameRunning=true; father.baseMaxHealth = father.baseMaxHealth || 20; fatherBossBuffApplied=false;
   father.armed=true; child.armed=false;
   recalcFatherHealth(); spawnWave(currentWave);
