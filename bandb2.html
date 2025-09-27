@@ -83,12 +83,7 @@ canvas{ display:block; width:100%; height:100%; background:#0f0f14; }
         <strong>Game instructions & mechanics</strong>
         <ul style="margin-top:10px;color:#ddd">
           <li><strong>Wave 1</strong> begins with <strong>10 zombies</strong>. Zombie numbers and difficulty increase each wave.</li>
-          <li><strong>Wave 4:</strong> You must clear zombies first; after all zombies are killed the <strong>Boss appears</strong> with a warning.</li>
-          <li>Father's max HP scales +<strong>20%</strong> per wave (multiplicative). Permanent boss buff applied at boss spawn.</li>
-          <li>If Father's HP ≤ <strong>10%</strong> the Son takes the weapon and fights (auto-fire). Father regenerates passively + healed by Son kills until he reaches <strong>50%</strong>, then he reclaims the weapon.</li>
-          <li>Buff pickups (damage, invisibility, health) require sacrificing oxygen (Father) or food (Child).</li>
-          <li>During boss fight, for each 10% Father HP lost, Child protection increases +5% and gun damage +10% per 10% lost.</li>
-          <li>If both die at any time the game restarts (endless mode continues until both are dead).</li>
+          
         </ul>
       </div>
       <div class="intro-actions">
@@ -454,7 +449,6 @@ function startGame(skipIntro){
 }
 
 /* update loop */
-let sonAutoTimeout = null;
 function update(){
   if(!gameRunning || isPaused) return;
 
@@ -610,20 +604,13 @@ function update(){
   }
 
   // wave progression:
-  // - If no zombies left AND boss not alive:
-  //   - If currentWave === 4 and boss not yet spawned -> spawn boss AFTER a small delay (dramatic)
-  //   - else -> increment wave and spawn next wave (endless)
   if(zombies.length === 0 && !boss.alive){
-    // if we are on wave 4 and boss hasn't spawned yet => spawn boss
     if(currentWave === 4 && !bossSpawned){
-      // delay a bit, show boss warning
       showBossWarning();
       setTimeout(()=> spawnBoss(), 1600);
     } else {
-      // if bossAlive is false and we've cleared waves and also if bossSpawned just finished but killed, continue waves
       setTimeout(()=>{
         if(!gameRunning) return;
-        // avoid repeatedly incrementing if something respawns - ensure condition still empty
         if(zombies.length === 0 && !boss.alive && !pendingBuff && !finalChoicePending){
           currentWave++;
           recalcFatherHealth(); spawnWave(currentWave);
@@ -685,7 +672,6 @@ function render(){
   if(boss.alive){ ctx.fillStyle = boss.color; ctx.fillRect(boss.x,boss.y,boss.width,boss.height); ctx.fillStyle = '#222'; ctx.fillRect(boss.x,boss.y-12,boss.width,8); ctx.fillStyle = '#ff66cc'; ctx.fillRect(boss.x,boss.y-12,boss.width * Math.max(0,boss.health)/boss.maxHealth,8); }
 
   // players
-  // father (armed tinted)
   if(father.alive){ ctx.fillStyle = father.armed ? '#7B8A8C' : father.color; ctx.fillRect(father.x, father.y, father.width, father.height); } else { ctx.fillStyle='#222'; ctx.fillRect(father.x,father.y,father.width,father.height); }
   if(child.alive){ ctx.fillStyle = child.armed ? '#FFD87D' : child.color; ctx.fillRect(child.x, child.y, child.width, child.height); } else { ctx.fillStyle='#222'; ctx.fillRect(child.x, child.y, child.width, child.height); }
 
