@@ -1,0 +1,1139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Last of Kin - Sacrifices Must Be Made</title>
+<style>
+    * { margin:0; padding:0; box-sizing:border-box }
+    body {
+        background:#0a0a0a; overflow:hidden;
+        font-family: 'Courier New', monospace; color:#fff;
+        user-select:none;
+    }
+    #gameContainer { position:relative; width:100vw; height:100vh;
+        background:linear-gradient(135deg,#1a1a2e 0%,#0f0f1e 100%);
+    }
+    canvas { display:block; background:#111; border:2px solid #333; transition:transform 0.1s; width:100vw; height:100vh }
+
+    /* UI Panel */
+    #ui { position:absolute; top:20px; left:20px; background:rgba(0,0,0,0.8);
+        border:2px solid #444; padding:15px; border-radius:5px; min-width:320px; backdrop-filter: blur(6px);
+    }
+    .character-stats { margin-bottom:15px; padding:10px; background:rgba(255,255,255,0.03); border-radius:3px; transition:all .3s; }
+    .character-stats.active { border:2px solid #4CAF50; background:rgba(76,175,80,0.07); box-shadow:0 0 20px rgba(76,175,80,0.12) }
+    .character-stats.collapsed { opacity:.4; border:2px solid #f44336 }
+    .stat-bar { display:flex; align-items:center; margin:6px 0; }
+    .stat-label { width:90px; font-size:12px; }
+    .stat-value { flex:1; height:20px; background:#222; border:1px solid #444; position:relative; overflow:hidden }
+    .stat-fill { height:100%; transition:width .3s, background-color .3s }
+    .health-fill { background:linear-gradient(90deg,#f44336,#ff6b6b) }
+    .oxygen-fill { background:linear-gradient(90deg,#2196F3,#64B5F6) }
+    .food-fill { background:linear-gradient(90deg,#FF9800,#FFB74D) }
+
+    /* Popups & other UI */
+    #sacrificePopup, #finalChoice, #gameOver, #introScreen, #transferNotice {
+        position:absolute; left:50%; transform:translateX(-50%);
+        background:rgba(0,0,0,0.95); border-radius:10px; z-index:1000; text-align:center;
+    }
+    #sacrificePopup { top:45%; padding:30px; border:3px solid #f44336; display:none; box-shadow:0 0 50px rgba(244,67,54,0.4) }
+    #finalChoice { top:45%; padding:40px; border:3px solid #9C27B0; display:none; box-shadow:0 0 100px rgba(156,39,176,0.6) }
+    #gameOver { top:45%; padding:40px; border:3px solid #f44336; display:none; z-index:3000; min-width:260px }
+    #introScreen { top:0; left:0; width:100%; height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:4000;
+        background:linear-gradient(135deg,#0a0a0a,#1a1a2e);
+    }
+    #introScreen h1 { font-size:56px; margin-bottom:20px; background:linear-gradient(135deg,#f44336,#ff6b6b);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; text-shadow:0 0 30px rgba(244,67,54,0.25) }
+    .intro-text { max-width:820px; text-align:left; color:#ccc; margin-bottom:24px; line-height:1.6; font-size:16px; padding:18px; border-radius:6px; background:rgba(255,255,255,0.02) }
+    .start-btn { padding:14px 36px; font-size:18px; background:linear-gradient(135deg,#4CAF50,#388E3C); color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold }
+    .start-btn:hover{ transform:scale(1.04) }
+
+    .startSmall { padding:10px 18px; font-size:14px }
+
+    #waveIndicator, #scoreDisplay {
+        position:absolute; right:20px; padding:10px 18px; border:2px solid #444; background:rgba(0,0,0,0.8); border-radius:6px; backdrop-filter: blur(6px)
+    }
+    #waveIndicator { top:20px; color:#4CAF50; font-size:18px }
+    #scoreDisplay { top:80px; color:#FFD700; font-size:14px }
+
+    .boss-warning {
+        position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:72px; color:#FF0000; text-shadow:0 0 40px rgba(255,0,0,0.8); pointer-events:none; z-index:900
+    }
+
+    #transferNotice { top:12%; padding:12px 18px; border:2px solid #fff; display:none; min-width:260px; color:#fff; font-weight:bold; z-index:1200; border-radius:8px; box-shadow:0 0 30px rgba(0,0,0,0.6) }
+
+    /* animations for floating emotions */
+    .emotion {
+        position:absolute; font-size:28px; pointer-events:none; z-index:1300; text-shadow:0 0 10px rgba(0,0,0,0.6);
+        opacity:0; transform:translateY(0);
+    }
+
+    /* small helpers */
+    .hidden { display:none }
+</style>
+</head>
+<body>
+<div id="gameContainer">
+    <!-- Intro Screen -->
+    <div id="introScreen">
+        <h1>BLOOD &amp; BOND</h1>
+        <div class="intro-text">
+            <strong>Instructions & Core Mechanics</strong>
+            <ol style="margin-top:8px;color:#ddd">
+                <li>Wave 1 starts with minimum <strong>3 zombies</strong>. Zombie counts and difficulty increase per wave. Boss arrives at <strong>wave 4</strong>.</li>
+                <li>Father's <em>max health</em> increases by <strong>20% per wave</strong> (multiplicative). A permanent boss buff increases father's max health at boss spawn.</li>
+                <li>If Father's health ≤ <strong>10%</strong>, the Son takes the weapon automatically and fights alone (auto-fire). Father regenerates until he reaches <strong>50%</strong>.</li>
+                <li>Father heals passively while recovering and receives extra HP when the Son kills infected.</li>
+                <li>Buffs spawn periodically (damage, invisibility, health). Picking a buff requires sacrificing oxygen (father) or food (child).</li>
+                <li>Gun damage and child protection scale with waves. During a boss fight, for every 10% Father HP lost the Child gains +5% protection and Gun damage gains +10% per 10% lost.</li>
+                <li>When Father reclaims the weapon, the Son returns it. If both die, the game restarts automatically.</li>
+            </ol>
+        </div>
+        <div style="display:flex;gap:16px;">
+            <button class="start-btn" onclick="startGame()">Begin</button>
+            <button class="start-btn" style="background:linear-gradient(135deg,#2196F3,#1976D2)" onclick="startGame(true)">Begin (Skip Intro)</button>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- UI -->
+    <div id="ui" style="display:none">
+        <div class="character-stats" id="fatherStats">
+            <div style="font-weight:bold;margin-bottom:10px">FATHER</div>
+            <div class="stat-bar">
+                <span class="stat-label">Health:</span>
+                <div class="stat-value"><div class="stat-fill health-fill" id="fatherHealth" style="width:100%"></div></div>
+            </div>
+            <div class="stat-bar">
+                <span class="stat-label">Oxygen:</span>
+                <div class="stat-value"><div class="stat-fill oxygen-fill" id="fatherOxygen" style="width:100%"></div></div>
+            </div>
+        </div>
+
+        <div class="character-stats" id="childStats">
+            <div style="font-weight:bold;margin-bottom:10px">CHILD</div>
+            <div class="stat-bar">
+                <span class="stat-label">Health:</span>
+                <div class="stat-value"><div class="stat-fill health-fill" id="childHealth" style="width:100%"></div></div>
+            </div>
+            <div class="stat-bar">
+                <span class="stat-label">Food:</span>
+                <div class="stat-value"><div class="stat-fill food-fill" id="childFood" style="width:100%"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="waveIndicator" style="display:none">Wave: 1</div>
+    <div id="scoreDisplay" style="display:none">Kills: 0 | Combo: x1</div>
+
+    <div id="sacrificePopup">
+        <h2>SACRIFICE MUST BE MADE</h2>
+        <p id="sacrificeText" style="margin-bottom:20px;color:#aaa">Choose what to lose to claim this buff...</p>
+        <div style="display:flex;gap:20px;justify-content:center">
+            <button class="startSmall" id="sacOxy" style="background:linear-gradient(135deg,#2196F3,#1976D2);color:#fff;border:none;padding:12px 18px;border-radius:6px">SACRIFICE OXYGEN (Father)</button>
+            <button class="startSmall" id="sacFood" style="background:linear-gradient(135deg,#FF9800,#F57C00);color:#fff;border:none;padding:12px 18px;border-radius:6px">SACRIFICE FOOD (Child)</button>
+        </div>
+    </div>
+
+    <div id="finalChoice">
+        <h1>THE FINAL SACRIFICE</h1>
+        <p style="color:#aaa;font-size:16px;margin:18px 0">The hive core must be destroyed manually.<br>One must stay behind. Choose who makes the ultimate sacrifice...</p>
+        <div style="display:flex;gap:24px;justify-content:center">
+            <button class="startSmall" style="border:2px solid #9C27B0;background:transparent;color:#fff;padding:12px 18px;border-radius:6px" onclick="finalSacrifice('father')">FATHER STAYS<br><small>Child Escapes</small></button>
+            <button class="startSmall" style="border:2px solid #9C27B0;background:transparent;color:#fff;padding:12px 18px;border-radius:6px" onclick="finalSacrifice('child')">CHILD STAYS<br><small>Father Escapes</small></button>
+        </div>
+    </div>
+
+    <div id="transferNotice"></div>
+
+    <div id="gameOver">
+        <h1 id="gameOverTitle">GAME OVER</h1>
+        <p id="gameOverMessage">Both have fallen...</p>
+        <p>Survived <span id="finalWave">0</span> waves</p>
+        <p>Killed <span id="finalKills">0</span> infected</p>
+        <div style="margin-top:18px"><button class="startSmall" onclick="restartGame()">Try Again</button></div>
+    </div>
+</div>
+
+<script>
+/* -------------------------
+   Assets: zombie images (optional)
+   ------------------------- */
+const zombieSrcs = ["zombie1.png","zombie2.png","zombie3.png"]; // if present in folder they will be used
+const zombieImgs = zombieSrcs.map(src => {
+    const img = new Image();
+    img.src = src;
+    return img;
+});
+
+/* -------------------------
+   Sound system (tiny)
+   ------------------------- */
+class SoundSystem {
+    constructor(){
+        this.ac = null;
+        try { this.ac = new (window.AudioContext||window.webkitAudioContext)(); } catch(e) { this.ac = null; }
+    }
+    play(f=440,d=0.08,t='sine',v=0.05){
+        if(!this.ac) return;
+        const o = this.ac.createOscillator();
+        const g = this.ac.createGain();
+        o.type = t; o.frequency.value = f;
+        g.gain.value = v;
+        o.connect(g); g.connect(this.ac.destination);
+        o.start();
+        o.stop(this.ac.currentTime + d);
+    }
+    shoot(){ this.play(400,0.05,'square',0.03) }
+    hit(){ this.play(180,0.08,'sawtooth',0.06) }
+    death(){ this.play(60,0.25,'sine',0.12) }
+    damage(){ this.play(120,0.12,'sawtooth',0.08) }
+    boss(){ this.play(30,1,'sine',0.18) }
+    powerup(){ this.play(720,0.06,'square',0.06) }
+    transfer(){ this.play(880,0.08,'sawtooth',0.07) }
+}
+const sound = new SoundSystem();
+
+/* -------------------------
+   Canvas & variables
+   ------------------------- */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas(){
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+let gameRunning = false;
+let isPaused = false;
+let currentWave = 1;
+let totalKills = 0;
+let combo = 0;
+let scoreMultiplier = 1;
+let activeCharacter = 'father';
+let bossSpawned = false;
+let bossDefeated = false;
+let showSacrifice = false;
+let showFinalChoice = false;
+let finalChoicePending = false;
+
+/* Characters */
+const father = {
+    x: 300, y: 300, width:40, height:40, speed:4,
+    // base stats
+    baseMaxHealth: 5,
+    maxHealth:5, health:5,
+    oxygen:5, maxOxygen:5, alive:true, color:'#4A5568',
+    armed: true
+};
+const child = {
+    x: 380, y:300, width:34, height:34, speed:4.6,
+    health:4, maxHealth:4, food:6, maxFood:6, alive:true, color:'#63B3ED',
+    armed: false
+};
+
+/* Boss */
+const boss = {
+    x:canvas.width/2, y:100, width:100, height:100,
+    baseSpeed:0.3, speed:0.3, health:120, maxHealth:120, color:'#8B008B',
+    alive:false, attackTimer:0, vx:0, vy:0, chargeTime:0
+};
+
+/* Entities */
+let zombies = []; // includes regular zombies and boss projectiles (projectile:true)
+let bullets = [];
+let particles = [];
+let bloodSplatters = [];
+let buffs = [];
+let activeBuffs = { damageBoost: false, invisibility: false };
+let invisibilityTimer = 0;
+let pendingBuff = null; // buff waiting for sacrifice pickup
+let emotionPool = []; // floating emoji elements
+let totalWavesSurvived = 0;
+
+// health-scaling flags / constants
+let fatherBossBuffApplied = false;
+const FATHER_WAVE_MULT = 1.2;    // +20% per wave (multiplicative)
+const FATHER_BOSS_MULT = 1.5;    // boss permanent buff (1.5x)
+
+/* Scaling & gameplay constants */
+const ZOMBIE_BASE_SPEED = 0.4; // 40% start
+const ZOMBIE_SPEED_PER_WAVE = 0.10; // +10% per wave
+const GUN_DAMAGE_BASE_FATHER = 2;
+const GUN_DAMAGE_BASE_CHILD = 1;
+const GUN_DAMAGE_PER_WAVE = 0.05; // +5% per wave
+const CHILD_PROTECTION_PER_WAVE = 0.03; // +3% per wave
+
+/* Healing + son backup settings */
+const FATHER_LOW_PERCENT = 0.10;    // <=10% triggers transfer
+const FATHER_RECOVER_PERCENT = 0.50; // >=50% returns weapon
+const PASSIVE_HEAL_PER_SEC = 0.3;   // father passive heal per second
+const SON_KILL_HEAL = 2;            // heal father by 2 HP when son kills a zombie
+let sonAutoFireInterval = null;     // interval handle for son's auto fire
+const SON_AUTO_FIRE_MS = 300;       // son fires every 300ms when armed
+
+/* Buff spawn */
+const BUFF_SPAWN_INTERVAL_MS = 7000;
+const BUFF_TYPES = ['damage','invisibility','health'];
+
+/* Input */
+const keys = {};
+let mouseX = 0, mouseY = 0;
+document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+canvas.addEventListener('mousemove', e => {
+    const r = canvas.getBoundingClientRect();
+    mouseX = e.clientX - r.left; mouseY = e.clientY - r.top;
+});
+canvas.addEventListener('click', () => { if(gameRunning && !isPaused) playerShoot(); });
+
+// allow tab switching reliably (fixed: single listener)
+document.addEventListener('keydown', ev => {
+    if(ev.key === 'Tab'){ ev.preventDefault();
+        // If son currently has the weapon (forced), do not allow manual switching until father >=50%
+        if(child.armed) return;
+        activeCharacter = (activeCharacter==='father'?'child':'father'); updateUI();
+    }
+});
+
+/* Helpers */
+function getActiveCharacter(){ return activeCharacter === 'father' ? father : child; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function rectsOverlap(a,b){ return !(a.x+b.width < b.x || a.x > b.x+b.width || a.y+b.height < b.y || a.y > b.y+b.height); }
+
+/* Emotions: floating emoji icons */
+function spawnEmotion(x,y,emoji,life=140,vy=-0.7, size=28){
+    emotionPool.push({ x, y, emoji, life, vy, size, alpha:1 });
+}
+function updateEmotions(){
+    for(let i=emotionPool.length-1;i>=0;i--){
+        const e = emotionPool[i];
+        e.y += e.vy;
+        e.life--;
+        e.alpha = Math.max(0, e.life/140);
+        if(e.life <= 0) emotionPool.splice(i,1);
+    }
+}
+
+/* Recalculate father's health based on currentWave and boss buff */
+function recalcFatherHealthForWaveAndBoss(){
+    const waveMultiplier = Math.pow(FATHER_WAVE_MULT, Math.max(0, currentWave - 1));
+    const bossMultiplier = fatherBossBuffApplied ? FATHER_BOSS_MULT : 1;
+    const newMax = Math.max(1, Math.floor(father.baseMaxHealth * waveMultiplier * bossMultiplier));
+    const oldMax = Math.max(1, father.maxHealth || father.baseMaxHealth);
+    const ratio = Math.max(0, Math.min(1, (father.health || oldMax) / oldMax));
+    const newHealth = Math.floor(newMax * ratio);
+
+    father.maxHealth = newMax;
+    father.health = Math.max(1, Math.min(newMax, newHealth));
+}
+
+/* notification helper */
+function showTransferNotice(text, timeMs=1400){
+    const el = document.getElementById('transferNotice');
+    el.textContent = text;
+    el.style.display = 'block';
+    sound.transfer();
+    setTimeout(()=>{ el.style.display = 'none'; }, timeMs);
+}
+
+/* Spawn a regular zombie */
+function spawnZombie(){
+    const angle = Math.random()*Math.PI*2;
+    const distance = 500 + Math.random()*300;
+    const cx = canvas.width/2, cy = canvas.height/2;
+    const img = zombieImgs[Math.floor(Math.random()*zombieImgs.length)];
+    const size = 30 + Math.floor(Math.random()*18);
+    const speedMultiplier = 1 + (currentWave-1) * ZOMBIE_SPEED_PER_WAVE;
+    const speed = (ZOMBIE_BASE_SPEED * speedMultiplier) + (Math.random()*0.6);
+    zombies.push({
+        x: cx + Math.cos(angle)*distance,
+        y: cy + Math.sin(angle)*distance,
+        width: size, height: size,
+        speed: speed,
+        health: Math.max(1, Math.floor(1 + currentWave/2)),
+        maxHealth: Math.max(1, Math.floor(1 + currentWave/2)),
+        color: '#48BB78', image: img, projectile:false
+    });
+}
+
+/* Buff spawn - places a buff pickup that requires sacrifice */
+function spawnBuffItem(){
+    const type = BUFF_TYPES[Math.floor(Math.random()*BUFF_TYPES.length)];
+    buffs.push({
+        x: 60 + Math.random() * (canvas.width - 120),
+        y: 60 + Math.random() * (canvas.height - 120),
+        width: 28, height:28,
+        type: type,
+        life: 300
+    });
+}
+
+/* Boss spawn */
+function spawnBoss(){
+    if(bossSpawned) return;
+    bossSpawned = true;
+    boss.alive = true;
+    boss.health = boss.maxHealth;
+    boss.x = canvas.width/2 - boss.width/2;
+    boss.y = 80;
+    boss.attackTimer = 0;
+    boss.vx = boss.vy = 0;
+
+    // Apply permanent boss buff to father (if not already applied)
+    if(!fatherBossBuffApplied){
+        fatherBossBuffApplied = true;
+        recalcFatherHealthForWaveAndBoss();
+        father.health = Math.min(father.health + Math.floor(father.maxHealth * 0.15), father.maxHealth);
+    }
+
+    // warning
+    const warn = document.createElement('div');
+    warn.className = 'boss-warning'; warn.textContent = 'BOSS INCOMING';
+    document.getElementById('gameContainer').appendChild(warn);
+    setTimeout(()=>warn.remove(), 2600);
+    sound.boss();
+    screenShake(20,900);
+}
+
+/* Screen shake */
+function screenShake(intensity=10,duration=300){
+    const start = Date.now();
+    function s(){
+        const elapsed = Date.now() - start;
+        if(elapsed < duration){
+            const a = intensity * (1 - elapsed/duration);
+            canvas.style.transform = `translate(${(Math.random()-0.5)*a}px, ${(Math.random()-0.5)*a}px)`;
+            requestAnimationFrame(s);
+        } else canvas.style.transform = '';
+    }
+    s();
+}
+
+/* Player shoot (manual player inputs) */
+function playerShoot(){
+    const p = getActiveCharacter();
+    if(!p.alive || !p.armed) return;
+    // compute gun damage multipliers
+    const gunMult = computeGunDamageMultiplier(p === father ? 'father' : 'child');
+    const base = (p === father) ? GUN_DAMAGE_BASE_FATHER : GUN_DAMAGE_BASE_CHILD;
+    const damage = Math.max(1, Math.round(base * gunMult));
+    const angle = Math.atan2(mouseY - (p.y + p.height/2), mouseX - (p.x + p.width/2));
+    bullets.push({
+        x: p.x + p.width/2, y: p.y + p.height/2,
+        vx: Math.cos(angle)*13, vy: Math.sin(angle)*13,
+        size: 5, damage: damage, owner: (p === father ? 'father' : 'child')
+    });
+    sound.shoot();
+    createParticles(p.x + p.width/2, p.y + p.height/2, '#FFD700', 4);
+}
+
+/* compute gun damage multiplier (waves + boss-loss bonus) */
+function computeGunDamageMultiplier(owner){
+    // wave scaling
+    const waveMult = 1 + (currentWave-1) * GUN_DAMAGE_PER_WAVE;
+    // boss-fight extra based on father's lost HP
+    let bossBonus = 0;
+    if(boss.alive){
+        const lostPercent = (father.maxHealth - father.health) / father.maxHealth;
+        const tens = Math.floor(lostPercent * 10); // number of 10% chunks
+        bossBonus = tens * 0.10; // 10% per 10%
+    }
+    // damage buff pickup
+    const buffMult = activeBuffs.damageBoost ? 1.5 : 1;
+    return waveMult * (1 + bossBonus) * buffMult;
+}
+
+/* compute child protection (damage reduction) */
+function computeChildProtection(){
+    const waveProt = 1 + (currentWave-1) * CHILD_PROTECTION_PER_WAVE;
+    let bonus = 0;
+    if(boss.alive){
+        const lostPercent = (father.maxHealth - father.health) / father.maxHealth;
+        const tens = Math.floor(lostPercent * 10);
+        bonus = tens * 0.05; // +5% per 10% lost
+    }
+    // Note: childProtection used as damage reduction, so clamp <1
+    const reduction = Math.min(0.85, (waveProt - 1) + bonus); // limit to 85% reduction max
+    return reduction;
+}
+
+/* Son auto-fire: aimed at nearest zombie */
+function startSonAutoFire(){
+    stopSonAutoFire();
+    sonAutoFireInterval = setInterval(()=> {
+        if(!gameRunning) return;
+        if(!child.alive || !child.armed) { stopSonAutoFire(); return; }
+        // find nearest hostile zombie (non-projectile)
+        let target = null;
+        let best = 99999;
+        for(const z of zombies){
+            if(z.projectile) continue;
+            const dx = (z.x + z.width/2) - (child.x + child.width/2);
+            const dy = (z.y + z.height/2) - (child.y + child.height/2);
+            const d = Math.hypot(dx,dy);
+            if(d < best){ best = d; target = z; }
+        }
+        // target boss if no zombies
+        if(!target && boss.alive) target = boss;
+        if(!target) return;
+        // aim at target center
+        const tx = (target.x + (target.width||0)/2) , ty = (target.y + (target.height||0)/2);
+        const angle = Math.atan2(ty - (child.y + child.height/2), tx - (child.x + child.width/2));
+        const damage = Math.max(1, Math.round(GUN_DAMAGE_BASE_CHILD * computeGunDamageMultiplier('child')));
+        bullets.push({
+            x: child.x + child.width/2, y: child.y + child.height/2,
+            vx: Math.cos(angle)*11, vy: Math.sin(angle)*11,
+            size: 5, damage: damage, owner: 'child'
+        });
+        sound.shoot();
+        createParticles(child.x + child.width/2, child.y + child.height/2, '#FFD700', 3);
+    }, SON_AUTO_FIRE_MS);
+}
+function stopSonAutoFire(){
+    if(sonAutoFireInterval) { clearInterval(sonAutoFireInterval); sonAutoFireInterval = null; }
+}
+
+/* Particles */
+function createParticles(x,y,color,count=6,spread=4){
+    for(let i=0;i<count;i++) particles.push({
+        x,y,
+        vx:(Math.random()-0.5)*spread, vy:(Math.random()-0.5)*spread,
+        life: 20 + Math.random()*20, color, size: 1 + Math.random()*3
+    });
+}
+
+/* Blood splatter */
+function createBloodSplatter(x,y){
+    bloodSplatters.push({ x,y, size: 10 + Math.random()*30, life: 120 + Math.random()*100 });
+}
+
+/* Update loop */
+function update(){
+    if(!gameRunning || isPaused) return;
+
+    // movement & following
+    [father,child].forEach(player => {
+        if(!player.alive) return;
+        if(player === getActiveCharacter()){
+            if(keys['w'] || keys['arrowup']) player.y -= player.speed;
+            if(keys['s'] || keys['arrowdown']) player.y += player.speed;
+            if(keys['a'] || keys['arrowleft']) player.x -= player.speed;
+            if(keys['d'] || keys['arrowright']) player.x += player.speed;
+        } else {
+            const a = getActiveCharacter();
+            const dx = a.x - player.x, dy = a.y - player.y;
+            const dist = Math.hypot(dx,dy);
+            if(dist > 160){
+                player.x += (dx/dist) * (player.speed*0.6);
+                player.y += (dy/dist) * (player.speed*0.6);
+            }
+        }
+        player.x = clamp(player.x, 0, canvas.width - player.width);
+        player.y = clamp(player.y, 0, canvas.height - player.height);
+    });
+
+    // Update bullets
+    for(let i=bullets.length-1;i>=0;i--){
+        const b = bullets[i];
+        b.x += b.vx; b.y += b.vy;
+        // offscreen
+        if(b.x < -50 || b.x > canvas.width+50 || b.y < -50 || b.y > canvas.height+50){
+            bullets.splice(i,1); continue;
+        }
+        // collide with zombies (including projectiles)
+        for(let j=zombies.length-1;j>=0;j--){
+            const z = zombies[j];
+            if(z.projectile) continue;
+            if( b.x > z.x && b.x < z.x + z.width && b.y > z.y && b.y < z.y + z.height ){
+                z.health -= b.damage;
+                createParticles(b.x,b.y,'#ff4d4d',6,6);
+                sound.hit();
+                const owner = b.owner || 'father';
+                bullets.splice(i,1);
+                if(z.health <= 0){
+                    totalKills++; combo++; scoreMultiplier = 1 + Math.floor(combo/5);
+                    createBloodSplatter(z.x + z.width/2, z.y + z.height/2);
+                    zombies.splice(j,1);
+                    // Son kill heals father
+                    if(owner === 'child' && child.armed && father.alive){
+                        father.health = Math.min(father.maxHealth, father.health + SON_KILL_HEAL);
+                        spawnEmotion(father.x + father.width/2, father.y - 8, '❤️');
+                    }
+                }
+                break;
+            }
+        }
+        // hit boss
+        if(b && boss.alive){
+            if(b.x > boss.x && b.x < boss.x+boss.width && b.y > boss.y && b.y < boss.y+boss.height){
+                boss.health -= b.damage;
+                createParticles(b.x,b.y,'#ff66aa',8,10);
+                sound.hit();
+                const owner = b.owner || 'father';
+                bullets.splice(i,1);
+                if(boss.health <= 0){
+                    boss.alive = false; bossDefeated = true;
+                    setTimeout(()=>showFinalChoicePopup(), 800);
+                }
+                if(owner === 'child' && father.alive){
+                    father.health = Math.min(father.maxHealth, father.health + Math.floor(SON_KILL_HEAL/2));
+                    spawnEmotion(boss.x, boss.y - 20, '💪');
+                }
+            }
+        }
+    }
+
+    // Update zombies
+    for(let i=zombies.length-1;i>=0;i--){
+        const z = zombies[i];
+        if(z.projectile){
+            z.x += z.vx; z.y += z.vy;
+            [father,child].forEach(player => {
+                if(!player.alive) return;
+                if( z.x > player.x && z.x < player.x+player.width && z.y > player.y && z.y < player.y+player.height ){
+                    // damage: base 1, apply child protection
+                    let dmg = 1;
+                    if(player === child){
+                        const reduction = computeChildProtection();
+                        dmg = Math.max(0, Math.ceil(dmg * (1 - reduction)));
+                    }
+                    player.health = (player.health || 1) - dmg;
+                    createParticles(player.x+player.width/2, player.y+player.height/2, '#ff3333', 6, 6);
+                    sound.damage();
+                    // remove projectile
+                    const idx = zombies.indexOf(z);
+                    if(idx>=0) zombies.splice(idx,1);
+                }
+            });
+            if(z.x < -100 || z.x > canvas.width+100 || z.y < -100 || z.y > canvas.height+100) zombies.splice(i,1);
+            continue;
+        }
+
+        // determine target, but avoid attacking invisible father
+        let target = (father.alive && child.alive) ? getActiveCharacter() : (father.alive?father:child);
+        if(activeBuffs.invisibility && target === father){
+            if(child.alive) target = child;
+        }
+        const dx = (target.x + target.width/2) - (z.x + z.width/2);
+        const dy = (target.y + target.height/2) - (z.y + z.height/2);
+        const dist = Math.hypot(dx,dy) || 1;
+        z.x += (dx/dist) * z.speed;
+        z.y += (dy/dist) * z.speed;
+
+        // collide with player
+        [father,child].forEach(player => {
+            if(!player.alive) return;
+            if( (z.x < player.x + player.width) && (z.x + z.width > player.x) && (z.y < player.y + player.height) && (z.y + z.height > player.y) ){
+                let dmg = 1;
+                if(player === child){
+                    const reduction = computeChildProtection();
+                    dmg = Math.max(0, Math.ceil(dmg * (1 - reduction)));
+                }
+                player.health -= dmg;
+                createParticles(player.x + player.width/2, player.y + player.height/2, '#ff3333',8,8);
+                createBloodSplatter(player.x + player.width/2, player.y + player.height/2);
+                sound.damage();
+                const idx = zombies.indexOf(z);
+                if(idx>=0) zombies.splice(idx,1);
+            }
+        });
+
+        if(z.health <= 0){
+            zombies.splice(i,1);
+            totalKills++; combo++;
+        }
+    }
+
+    // Boss logic
+    if(boss.alive){
+        // boss speed scales with HP lost: +5% per 10% HP lost (i.e. up to +50% at 0 HP)
+        const lostPercent = (boss.maxHealth - boss.health) / boss.maxHealth;
+        const speedMultiplier = 1 + (Math.floor(lostPercent * 10) * 0.05);
+        boss.speed = boss.baseSpeed * speedMultiplier;
+
+        let target = (father.alive && child.alive) ? getActiveCharacter() : (father.alive?father:child);
+        if(activeBuffs.invisibility && target === father){
+            if(child.alive) target = child;
+        }
+
+        const dx = (target.x + target.width/2) - (boss.x + boss.width/2);
+        const dy = (target.y + target.height/2) - (boss.y + boss.height/2);
+        const dist = Math.hypot(dx,dy) || 1;
+        if(!boss.chargeTime || boss.chargeTime<=0){
+            if(dist > 70){
+                boss.x += (dx/dist) * boss.speed;
+                boss.y += (dy/dist) * boss.speed;
+            }
+        }
+        boss.attackTimer++;
+        if(boss.attackTimer % 160 === 0){
+            for(let k=0;k<12;k++){
+                const ang = (Math.PI*2/12) * k + (Math.random()*0.3 - 0.15);
+                zombies.push({
+                    x: boss.x + boss.width/2,
+                    y: boss.y + boss.height/2,
+                    width:14, height:14, speed:2, health:1, maxHealth:1,
+                    color:'#FF4500', projectile:true,
+                    vx: Math.cos(ang)*4, vy: Math.sin(ang)*4
+                });
+            }
+            sound.hit();
+            screenShake(12,420);
+        }
+        if(boss.attackTimer % 360 === 0){
+            const dx2 = (target.x + target.width/2) - (boss.x + boss.width/2);
+            const dy2 = (target.y + target.height/2) - (boss.y + boss.height/2);
+            const d2 = Math.hypot(dx2,dy2) || 1;
+            boss.vx = (dx2/d2) * 10;
+            boss.vy = (dy2/d2) * 10;
+            boss.chargeTime = 26;
+            sound.damage();
+            screenShake(20,520);
+        }
+        if(boss.chargeTime && boss.chargeTime > 0){
+            boss.x += boss.vx; boss.y += boss.vy; boss.chargeTime--;
+            [father,child].forEach(player=>{
+                if(!player.alive) return;
+                if( boss.x < player.x + player.width && boss.x + boss.width > player.x && boss.y < player.y + player.height && boss.y + boss.height > player.y ){
+                    player.health -= 2; // heavy hit
+                    createParticles(player.x + player.width/2, player.y + player.height/2, '#ff0033', 12, 14);
+                    sound.damage();
+                }
+            });
+        }
+
+        boss.x = clamp(boss.x, 20, canvas.width - boss.width - 20);
+        boss.y = clamp(boss.y, 20, canvas.height - boss.height - 20);
+        if(boss.attackTimer > 2000) boss.attackTimer = 0;
+    }
+
+    // particles update
+    for(let i=particles.length-1;i>=0;i--){
+        const p = particles[i];
+        p.x += p.vx; p.y += p.vy;
+        p.life--;
+        if(p.life <= 0) particles.splice(i,1);
+    }
+
+    // blood splatters decay
+    for(let i=bloodSplatters.length-1;i>=0;i--){
+        const b = bloodSplatters[i];
+        b.life--;
+        if(b.life <= 0) bloodSplatters.splice(i,1);
+    }
+
+    // buffs lifetime & pickup collision
+    for(let i=buffs.length-1;i>=0;i--){
+        const f = buffs[i];
+        f.life--;
+        // draw pickup handled in render, but check collision with players
+        [father,child].forEach(player => {
+            if(!player.alive) return;
+            if( (f.x < player.x + player.width) && (f.x + f.width > player.x) && (f.y < player.y + player.height) && (f.y + f.height > player.y) ){
+                // collision: show sacrifice popup and mark pending buff
+                pendingBuff = f;
+                document.getElementById('sacrificePopup').style.display = 'block';
+                document.getElementById('sacrificeText').textContent = `To receive ${f.type.toUpperCase()} buff sacrifice Oxygen (father) or Food (child).`;
+                showSacrifice = true;
+                // remove buff item visually until decision
+                buffs.splice(i,1);
+            }
+        });
+        if(f.life <= 0) buffs.splice(i,1);
+    }
+
+    // father low-health check -> transfer weapon to son
+    if(father.alive && !child.armed && (father.health <= Math.floor(father.maxHealth * FATHER_LOW_PERCENT))){
+        father.armed = false;
+        child.armed = true;
+        activeCharacter = 'child';
+        updateUI();
+        showTransferNotice('Son has taken the weapon!');
+        spawnEmotion(child.x + child.width/2, child.y - 8, '🔥');
+        startSonAutoFire();
+    }
+
+    // Passive father regen every frame (hybrid: passive + son-kills boost already applied when kills happen)
+    const healPerFrame = PASSIVE_HEAL_PER_SEC / 60;
+    if(father.alive && father.health < father.maxHealth){
+        father.health = Math.min(father.maxHealth, father.health + healPerFrame);
+    }
+
+    // If son armed, check if father reached recover threshold to return weapon
+    if(child.armed && father.alive && (father.health >= Math.floor(father.maxHealth * FATHER_RECOVER_PERCENT))){
+        child.armed = false;
+        father.armed = true;
+        stopSonAutoFire();
+        showTransferNotice('Father has reclaimed the weapon!');
+        spawnEmotion(father.x + father.width/2, father.y - 8, '🤝');
+        activeCharacter = 'father';
+        updateUI();
+    }
+
+    // UI and waves: spawn new wave when few zombies & boss not active
+    if(zombies.length < Math.max(1, Math.floor(2 + currentWave/2)) && !boss.alive && !bossSpawned){
+        // spawn new wave after a short delay
+        setTimeout(()=> {
+            if(!gameRunning || bossSpawned || finalChoicePending) return;
+            currentWave++;
+            // Recalculate father's health for the new wave BEFORE spawning zombies
+            recalcFatherHealthForWaveAndBoss();
+            spawnWave(currentWave);
+            // Boss logic: first boss arrives exactly at wave 4, then reoccurs every 5 waves (4,9,14,...)
+            if(currentWave >= 4 && ((currentWave === 4) || ((currentWave - 4) % 5 === 0))){
+                spawnBoss();
+            }
+        }, 900);
+    }
+
+    // Win/loss checks
+    [father,child].forEach(player => {
+        if(player.alive && player.health <= 0) {
+            player.alive = false;
+            player.health = 0;
+            sound.death();
+            createParticles(player.x + player.width/2, player.y + player.height/2, '#222', 16, 12);
+            spawnEmotion(player.x + player.width/2, player.y - 8, '💔');
+        }
+    });
+
+    // If both dead -> restart game (full reset)
+    if(!father.alive && !child.alive){
+        gameRunning = false;
+        setTimeout(()=> {
+            restartGame();
+        }, 900);
+        return;
+    }
+
+    // update floating emotions
+    updateEmotions();
+
+    updateUI();
+}
+
+/* spawnWave: spawns n zombies scaled by wave */
+function spawnWave(wave){
+    // ensure minimum 3 at wave 1, else increases per wave
+    const count = Math.max(3, Math.min(8 + Math.floor(wave*1.5), 60));
+    for(let i=0;i<count;i++){
+        setTimeout(spawnZombie, Math.random()*900 + i*60);
+    }
+    // spawn buffs occasionally
+    setTimeout(()=> spawnBuffItem(), 900 + Math.random()*1200);
+    setInterval(()=> {
+        if(!gameRunning) return;
+        spawnBuffItem();
+    }, BUFF_SPAWN_INTERVAL_MS);
+
+    document.getElementById('ui').style.display = 'block';
+    document.getElementById('waveIndicator').style.display = 'block';
+    document.getElementById('scoreDisplay').style.display = 'block';
+}
+
+/* Final choice popup */
+function showFinalChoicePopup(){
+    finalChoicePending = true;
+    document.getElementById('finalChoice').style.display = 'block';
+}
+
+/* Sacrifice UI handlers */
+document.getElementById('sacOxy').addEventListener('click', ()=> {
+    performSacrifice('oxygen');
+});
+document.getElementById('sacFood').addEventListener('click', ()=> {
+    performSacrifice('food');
+});
+
+function performSacrifice(type){
+    document.getElementById('sacrificePopup').style.display = 'none';
+    showSacrifice = false;
+    if(!pendingBuff) return;
+    const b = pendingBuff;
+    pendingBuff = null;
+    sound.powerup();
+    if(type === 'oxygen'){
+        // father sacrifices oxygen
+        if(father.oxygen > 0){
+            father.oxygen = Math.max(0, father.oxygen - 1);
+            applyBuff(b, 'father');
+            spawnEmotion(father.x + father.width/2, father.y - 8, '🩸');
+        } else {
+            // can't, give small penalty
+            spawnEmotion(father.x + father.width/2, father.y - 8, '⚠️');
+        }
+    } else {
+        if(child.food > 0){
+            child.food = Math.max(0, child.food - 1);
+            applyBuff(b, 'child');
+            spawnEmotion(child.x + child.width/2, child.y - 8, '🍞');
+        } else {
+            spawnEmotion(child.x + child.width/2, child.y - 8, '⚠️');
+        }
+    }
+    updateUI();
+}
+
+function applyBuff(buff, byWho){
+    if(!buff) return;
+    if(buff.type === 'damage'){
+        activeBuffs.damageBoost = true;
+        setTimeout(()=> activeBuffs.damageBoost = false, 14000); // 14s
+    } else if(buff.type === 'invisibility'){
+        if(byWho === 'father' || (byWho === 'child' && father.alive)){
+            activeBuffs.invisibility = true;
+            setTimeout(()=> activeBuffs.invisibility = false, 5000); // 5s invisibility
+        }
+    } else if(buff.type === 'health'){
+        if(byWho === 'father'){
+            father.health = Math.min(father.maxHealth, father.health + Math.floor(father.maxHealth*0.25));
+        } else {
+            child.health = Math.min(child.maxHealth, child.health + Math.floor(child.maxHealth*0.25));
+        }
+    }
+}
+
+/* final sacrifice choice -> one survives, other dies leaving message */
+function finalSacrifice(whoStays){
+    document.getElementById('finalChoice').style.display = 'none';
+    finalChoicePending = false;
+    if(whoStays === 'father'){
+        father.alive = false;
+        child.alive = true;
+        endGame('Child Escaped - Father Sacrificed', true);
+    } else {
+        child.alive = false;
+        father.alive = true;
+        endGame('Father Escaped - Child Sacrificed', true);
+    }
+}
+
+/* End game (used for final choice results) */
+function endGame(msg, survived=false){
+    gameRunning = false;
+    document.getElementById('gameOver').style.display = 'block';
+    document.getElementById('gameOverTitle').textContent = survived ? 'VICTORY' : 'GAME OVER';
+    document.getElementById('gameOverMessage').textContent = msg;
+    document.getElementById('finalWave').textContent = currentWave;
+    document.getElementById('finalKills').textContent = totalKills;
+    spawnEmotion(canvas.width/2, canvas.height/2 - 40, survived ? '🏆' : '💀', 220, -0.3, 48);
+}
+
+/* Restart */
+function restartGame(){
+    document.getElementById('gameOver').style.display = 'none';
+    document.getElementById('introScreen').style.display = 'none';
+    // reset
+    gameRunning = true;
+    isPaused = false;
+    currentWave = 1;
+    totalKills = 0;
+    combo = 0;
+    scoreMultiplier = 1;
+    activeCharacter = 'father';
+    bossSpawned = false; bossDefeated = false; finalChoicePending = false;
+    father.x = canvas.width/2 - 100; father.y = canvas.height/2;
+    father.baseMaxHealth = father.baseMaxHealth || 5;
+    fatherBossBuffApplied = false;
+    father.armed = true;
+    child.armed = false;
+    stopSonAutoFire();
+    recalcFatherHealthForWaveAndBoss();
+    father.health = father.maxHealth; father.oxygen = father.maxOxygen; father.alive = true;
+    child.x = canvas.width/2 + 100; child.y = canvas.height/2; child.health = child.maxHealth; child.food = child.maxFood; child.alive = true;
+    zombies = []; bullets = []; particles = []; bloodSplatters = []; buffs = []; emotionPool = [];
+    document.getElementById('ui').style.display = 'block';
+    document.getElementById('waveIndicator').style.display = 'block';
+    document.getElementById('scoreDisplay').style.display = 'block';
+    spawnWave(currentWave);
+}
+
+/* Start */
+function startGame(skipIntro){
+    document.getElementById('introScreen').style.display = 'none';
+    document.getElementById('ui').style.display = 'block';
+    document.getElementById('waveIndicator').style.display = 'block';
+    document.getElementById('scoreDisplay').style.display = 'block';
+    gameRunning = true;
+
+    father.baseMaxHealth = father.baseMaxHealth || father.maxHealth || 5;
+    fatherBossBuffApplied = false;
+    father.armed = true;
+    child.armed = false;
+    recalcFatherHealthForWaveAndBoss();
+
+    spawnWave(currentWave);
+}
+
+/* Update UI elements */
+function updateUI(){
+    const fh = Math.max(0, (father.maxHealth? father.health / father.maxHealth : 0) * 100);
+    document.getElementById('fatherHealth').style.width = fh + '%';
+    const fo = Math.max(0, father.oxygen / father.maxOxygen * 100);
+    document.getElementById('fatherOxygen').style.width = fo + '%';
+
+    const ch = Math.max(0, child.health / child.maxHealth * 100);
+    document.getElementById('childHealth').style.width = ch + '%';
+    const cf = Math.max(0, child.food / child.maxFood * 100);
+    document.getElementById('childFood').style.width = cf + '%';
+
+    document.getElementById('fatherStats').className = 'character-stats' + (activeCharacter==='father'? ' active' : (father.alive? '' : ' collapsed'));
+    document.getElementById('childStats').className = 'character-stats' + (activeCharacter==='child'? ' active' : (child.alive? '' : ' collapsed'));
+
+    document.getElementById('waveIndicator').textContent = 'Wave: ' + currentWave;
+    document.getElementById('scoreDisplay').textContent = `Kills: ${totalKills} | Combo: x${scoreMultiplier}`;
+}
+
+/* Render loop */
+function render(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // background
+    ctx.fillStyle = '#0f0f14';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // draw blood splatters
+    for(const b of bloodSplatters){
+        ctx.globalAlpha = Math.max(0, Math.min(1, b.life/200));
+        ctx.fillStyle = '#5b0000';
+        ctx.beginPath();
+        ctx.ellipse(b.x, b.y, b.size*0.8, b.size*0.5, Math.random()*Math.PI, 0, Math.PI*2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+    }
+
+    // draw buffs
+    for(const f of buffs){
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, f.life/300));
+        ctx.fillStyle = f.type === 'damage' ? '#ffcc00' : (f.type === 'invisibility' ? '#66ccff' : '#66ff88');
+        ctx.beginPath();
+        ctx.arc(f.x + f.width/2, f.y + f.height/2, f.width/2, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = '#111';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(f.type[0].toUpperCase(), f.x + f.width/2, f.y + f.height/2);
+        ctx.restore();
+    }
+
+    // draw particles
+    for(const p of particles){
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.life/80));
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+
+    // draw bullets
+    for(const b of bullets){
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.size, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    // draw zombies
+    for(const z of zombies){
+        if(z.projectile){
+            ctx.fillStyle = z.color || '#ff6b00';
+            ctx.beginPath();
+            ctx.arc(z.x, z.y, z.width/2, 0, Math.PI*2);
+            ctx.fill();
+            continue;
+        }
+        if(z.image && z.image.complete && z.image.naturalWidth !== 0){
+            ctx.drawImage(z.image, z.x, z.y, z.width, z.height);
+        } else {
+            ctx.fillStyle = z.color || '#48BB78';
+            ctx.fillRect(z.x, z.y, z.width, z.height);
+        }
+        const hw = z.width;
+        const hh = 4;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(z.x, z.y-8, hw, hh);
+        ctx.fillStyle = '#ff6666';
+        ctx.fillRect(z.x, z.y-8, hw * (z.health / (z.maxHealth||1)), hh);
+    }
+
+    // draw boss
+    if(boss.alive){
+        ctx.fillStyle = boss.color;
+        ctx.fillRect(boss.x, boss.y, boss.width, boss.height);
+        ctx.fillStyle = '#222';
+        ctx.fillRect(boss.x, boss.y-12, boss.width, 8);
+        ctx.fillStyle = '#ff66cc';
+        ctx.fillRect(boss.x, boss.y-12, boss.width * (Math.max(0,boss.health)/boss.maxHealth), 8);
+    }
+
+    // draw players
+    if(father.alive){
+        ctx.fillStyle = father.armed ? '#7B8A8C' : father.color;
+        ctx.fillRect(father.x, father.y, father.width, father.height);
+    } else {
+        ctx.fillStyle = '#222';
+        ctx.fillRect(father.x, father.y, father.width, father.height);
+    }
+    if(child.alive){
+        ctx.fillStyle = child.armed ? '#FFD87D' : child.color;
+        ctx.fillRect(child.x, child.y, child.width, child.height);
+    } else {
+        ctx.fillStyle = '#222';
+        ctx.fillRect(child.x, child.y, child.width, child.height);
+    }
+
+    // draw emotion emojis
+    for(const e of emotionPool){
+        ctx.globalAlpha = e.alpha;
+        ctx.font = `${e.size}px monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(e.emoji, e.x, e.y);
+    }
+    ctx.globalAlpha = 1;
+
+    // HUD overlay
+    ctx.fillStyle = 'rgba(255,255,255,0.02)';
+    ctx.fillRect(10, canvas.height - 80, 360, 64);
+
+    requestAnimationFrame(render);
+}
+
+/* main loops */
+function mainLoop(){
+    update();
+    setTimeout(mainLoop, 1000/60);
+}
+
+/* utility: sacrifice popup demo timer */
+let sacrificeTimer = 0;
+setInterval(() => {
+    if(!gameRunning) return;
+    sacrificeTimer++;
+    if(sacrificeTimer % 20 === 0 && !showSacrifice && !finalChoicePending && !bossSpawned){
+        spawnBuffItem();
+    }
+}, 1000);
+
+/* start render & main loops */
+render();
+mainLoop();
+
+/* expose restart/start to global */
+window.startGame = startGame;
+window.restartGame = restartGame;
+window.chooseSacrifice = function(type){ performSacrifice(type); };
+window.finalSacrifice = finalSacrifice;
+
+/* A small helper to spawn initial wave on load (keeps intro) */
+document.addEventListener('DOMContentLoaded', ()=> {
+    // nothing until start pressed
+});
+</script>
+</body>
+</html>
